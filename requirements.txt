@@ -1,0 +1,20 @@
+# Packet capture and data processing
+scapy
+pandas
+
+# Machine learning model and persistence
+scikit-learn
+joblib
+
+# FastAPI backend
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Legacy Streamlit dashboard
+streamlit
+streamlit-autorefresh
+
+# Dataset download and optional GeoIP lookups
+requests
+geoip2
