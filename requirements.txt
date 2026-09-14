@@ -3,6 +3,7 @@ scapy
 pandas
 
 # Machine learning model and persistence
+numpy
 scikit-learn
 joblib
 
@@ -15,6 +16,5 @@ python-multipart
 streamlit
 streamlit-autorefresh
 
-# Dataset download and optional GeoIP lookups
+# Dataset download and threat intelligence lookups
 requests
-geoip2
