@@ -30,7 +30,7 @@ requirements.txt
 
 Replace the placeholder URL with the actual repository URL:
 ```sh
-git clone https://github.com/<owner>/<repository>.git
+git clone (https://github.com/Am1rArshad/arpspoofmldetection)
 cd ai-powered-ids-for-home-networks-main
 ```
 
