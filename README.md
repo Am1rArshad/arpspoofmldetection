@@ -35,6 +35,7 @@ cd ai-powered-ids-for-home-networks-main
 ```
 
 ### 2. Install Python dependencies
+Create a virtual python environment and then run the requirements.txt
 ```sh
 python3 -m venv venv
 source venv/bin/activate
@@ -110,7 +111,7 @@ tail -f data/captured_packets.csv
 tail -f data/alerts.log
 ```
 
-For PC A attacking PC B while PC C runs the IDS, PC C must be able to see the
+For PC A(attacker) attack PC B(victim) while PC C runs the IDS, PC C must be able to see the
 traffic. Use a gateway, bridge, switch port mirror, or capture directly on the
 network path. A normal switched network does not send PC A-to-PC B unicast
 traffic to an unrelated PC C.
