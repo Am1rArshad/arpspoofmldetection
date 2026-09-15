@@ -5,6 +5,12 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PYTHON="$ROOT_DIR/venv/bin/python"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 DATA_DIR="$ROOT_DIR/data"
+MODEL_DIR="$ROOT_DIR/models"
+
+echo "Cleaning up previous IDS services..."
+fuser -k 8000/tcp 5173/tcp 2>/dev/null || true
+pkill -f 'sniffer.py' 2>/dev/null || true
+pkill -f 'realtime_detect.py' 2>/dev/null || true
 
 if [[ ! -x "$VENV_PYTHON" ]]; then
     echo "Python virtual environment not found. Create it with:"
@@ -20,11 +26,11 @@ if ! "$VENV_PYTHON" -c 'import pandas, joblib, sklearn, fastapi, uvicorn' 2>/dev
 fi
 
 if [[ "$EUID" -eq 0 ]]; then
-    chown -R "${SUDO_USER:-root}:${SUDO_USER:-root}" "$DATA_DIR"
-elif [[ ! -w "$DATA_DIR" || ! -w "$DATA_DIR/uploaded_dataset.csv" ]]; then
+    chown -R "${SUDO_USER:-root}:${SUDO_USER:-root}" "$DATA_DIR" "$MODEL_DIR"
+elif [[ ! -w "$DATA_DIR" || ! -w "$DATA_DIR/uploaded_dataset.csv" || ! -w "$MODEL_DIR" ]]; then
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
         echo "Fixing data directory permissions..."
-        sudo chown -R "$USER":"$(id -gn)" "$DATA_DIR"
+        sudo chown -R "$USER":"$(id -gn)" "$DATA_DIR" "$MODEL_DIR"
     else
         echo "Warning: sudo is unavailable or passwordless sudo is disabled. Continuing without data permission repair."
     fi
@@ -56,13 +62,13 @@ run_service() {
 }
 
 cd "$ROOT_DIR"
-run_service "backend" "$VENV_PYTHON" -m uvicorn backend.main:app --reload --port 8000
+run_service "backend" "$VENV_PYTHON" -u -m uvicorn backend.main:app --reload --port 8000
 run_service "frontend" npm --prefix "$FRONTEND_DIR" run dev
 
 if [[ "$EUID" -eq 0 ]]; then
-    run_service "packet capture" "$VENV_PYTHON" "$ROOT_DIR/src/sniffer.py"
+    run_service "packet capture" "$VENV_PYTHON" -u "$ROOT_DIR/src/sniffer.py"
 elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-    run_service "packet capture" sudo -E "$VENV_PYTHON" "$ROOT_DIR/src/sniffer.py"
+    run_service "packet capture" sudo -E "$VENV_PYTHON" -u "$ROOT_DIR/src/sniffer.py"
 else
     echo
     echo "WARNING: Packet capture was skipped because sudo is unavailable or passwordless sudo is not configured."
@@ -73,7 +79,7 @@ else
     echo
 fi
 
-run_service "real-time detection" "$VENV_PYTHON" "$ROOT_DIR/src/realtime_detect.py"
+run_service "real-time detection" "$VENV_PYTHON" -u "$ROOT_DIR/src/realtime_detect.py"
 
 echo
 if [[ "$EUID" -ne 0 ]] && ! (command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1); then

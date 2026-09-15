@@ -23,12 +23,14 @@ function App() {
   const [trainingResult, setTrainingResult] = useState(null);
 
   const refresh = async () => {
-    const [trafficData, alertData] = await Promise.all([
+    const [trafficData, alertData, modelData] = await Promise.all([
       request('/api/traffic'),
-      request('/api/alerts')
+      request('/api/alerts'),
+      request('/api/model')
     ]);
     setTraffic(trafficData);
     setAlerts((alertData.alerts || []).slice(-10).reverse());
+    setTrainingResult(modelData);
   };
 
   useEffect(() => {
@@ -133,6 +135,9 @@ function App() {
 
   const accuracyMatch = trainingResult?.report?.match(/accuracy\s+([0-9.]+)/);
   const accuracy = accuracyMatch ? `${(Number(accuracyMatch[1]) * 100).toFixed(1)}%` : '--';
+  const trainedAt = trainingResult?.trained_at
+    ? new Date(trainingResult.trained_at).toLocaleString()
+    : '--';
 
   return (
     <main className="shell">
@@ -339,9 +344,17 @@ function App() {
                   <div><span>CLASSES</span><strong>{trainingResult.classes.length}</strong></div>
                 </div>
                 <div className="class-list">
+                    <span>TRAINED FILE</span>
+                    <strong>{trainingResult.filename}</strong>
+                  </div>
+                  <div className="class-list">
                   <span>LABEL CLASSES</span>
                   <strong>{trainingResult.classes.join(', ')}</strong>
                 </div>
+                  <div className="class-list">
+                    <span>LAST TRAINED</span>
+                    <strong>{trainedAt}</strong>
+                  </div>
                 <pre className="report">{trainingResult.report}</pre>
               </>
             ) : (

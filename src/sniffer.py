@@ -4,7 +4,10 @@ import os
 from datetime import datetime
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'captured_packets.csv')
-HOST_MAC = '00:0c:29:7d:51:17'
+ALERT_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'alerts.log')
+HOST_MAC = os.environ.get('IDS_HOST_MAC', '00:0c:29:7d:51:17')
+SNIFF_INTERFACE = os.environ.get('IDS_SNIFF_INTERFACE')
+arp_bindings = {}
 
 features = [
     'timestamp', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol', 'packet_length'
@@ -34,6 +37,20 @@ def extract_features(packet):
     }
 
 def packet_callback(packet):
+    if packet.haslayer(scapy.ARP):
+        arp = packet[scapy.ARP]
+        if arp.psrc and arp.hwsrc:
+            previous_mac = arp_bindings.get(arp.psrc)
+            if previous_mac and previous_mac.lower() != arp.hwsrc.lower():
+                alert = (
+                    f'ALERT: ARP spoofing suspected: {arp.psrc} changed from '
+                    f'{previous_mac} to {arp.hwsrc}'
+                )
+                with open(ALERT_PATH, 'a') as stream:
+                    stream.write(alert + '\n')
+                print(alert, flush=True)
+            arp_bindings[arp.psrc] = arp.hwsrc
+        return
     feat = extract_features(packet)
     if feat:
         df = pd.DataFrame([feat])
@@ -41,12 +58,15 @@ def packet_callback(packet):
             df.to_csv(DATA_PATH, index=False, mode='w', header=True)
         else:
             df.to_csv(DATA_PATH, index=False, mode='a', header=False)
-        print(feat)
+        print(feat, flush=True)
 
 if __name__ == '__main__':
-    print('Starting packet capture... Press Ctrl+C to stop.')
-    scapy.sniff(
-        filter=f'not ether host {HOST_MAC}',
-        prn=packet_callback,
-        store=0,
-    )
+    print('Starting packet capture... Press Ctrl+C to stop.', flush=True)
+    sniff_options = {
+        'filter': f'not ether host {HOST_MAC}',
+        'prn': packet_callback,
+        'store': 0,
+    }
+    if SNIFF_INTERFACE:
+        sniff_options['iface'] = SNIFF_INTERFACE
+    scapy.sniff(**sniff_options)

@@ -1,7 +1,9 @@
 import asyncio
 import io
+import json
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +19,7 @@ DATA_DIR = ROOT_DIR / 'data'
 DATA_PATH = DATA_DIR / 'captured_packets.csv'
 LOG_PATH = DATA_DIR / 'alerts.log'
 UPLOADED_DATA_PATH = DATA_DIR / 'uploaded_dataset.csv'
+MODEL_METADATA_PATH = DATA_DIR / 'model_metadata.json'
 FRONTEND_DIST = ROOT_DIR / 'frontend' / 'dist'
 
 import sys
@@ -36,6 +39,8 @@ def json_safe(value):
         return json_safe(value.item())
     if isinstance(value, (pd.Timestamp, pd.Timedelta)):
         return value.isoformat()
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
     if isinstance(value, (float, int, str, bool)) or value is None:
         return value
     if hasattr(value, 'item'):
@@ -74,11 +79,50 @@ def read_alerts():
         return [line.strip() for line in stream.readlines()[-10:][::-1] if line.strip()]
 
 
-def train_from_frame(frame, source):
+def read_model_metadata():
+    if MODEL_METADATA_PATH.exists():
+        try:
+            with MODEL_METADATA_PATH.open() as stream:
+                return json.load(stream)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    if UPLOADED_DATA_PATH.exists() and (DATA_DIR.parent / 'models' / 'rf_model.joblib').exists():
+        try:
+            frame = pd.read_csv(UPLOADED_DATA_PATH)
+            label_encoder = __import__('joblib').load(
+                DATA_DIR.parent / 'models' / 'label_encoder.joblib'
+            )
+            return {
+                'source': 'uploaded dataset',
+                'filename': UPLOADED_DATA_PATH.name,
+                'rows': len(frame),
+                'classes': [str(item) for item in label_encoder.classes_],
+                'report': 'Existing saved model detected. Retrain to generate a new report.',
+                'trained_at': datetime.fromtimestamp(
+                    (DATA_DIR.parent / 'models' / 'rf_model.joblib').stat().st_mtime,
+                    timezone.utc,
+                ).isoformat(),
+            }
+        except (OSError, ValueError, ImportError):
+            pass
+    return None
+
+
+def train_from_frame(frame, source, filename):
     if source == 'uploaded dataset':
         frame.to_csv(UPLOADED_DATA_PATH, index=False)
     report, row_count, classes = train_model(frame)
-    return {'source': source, 'rows': row_count, 'classes': [str(item) for item in classes], 'report': report}
+    result = {
+        'source': source,
+        'filename': filename,
+        'rows': row_count,
+        'classes': [str(item) for item in classes],
+        'report': report,
+        'trained_at': datetime.now(timezone.utc).isoformat(),
+    }
+    MODEL_METADATA_PATH.write_text(json.dumps(result, indent=2))
+    return result
 
 
 def normalize_uploaded_dataset(frame):
@@ -140,6 +184,11 @@ def alerts():
     return {'count': len(items), 'alerts': items}
 
 
+@app.get('/api/model')
+def model_status():
+    return read_model_metadata()
+
+
 @app.delete('/api/alerts')
 def clear_alerts():
     if LOG_PATH.exists():
@@ -157,7 +206,11 @@ def clear_monitoring_data():
 @app.post('/api/train/nsl-kdd')
 async def train_nsl_kdd():
     try:
-        return await run_in_threadpool(lambda: train_from_frame(prepare_nsl_kdd(), 'NSL-KDD'))
+        return await run_in_threadpool(
+            lambda: train_from_frame(
+                prepare_nsl_kdd(), 'NSL-KDD', 'NSL-KDD training dataset'
+            )
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -169,7 +222,9 @@ async def train_upload(file: UploadFile = File(...)):
     try:
         content = await file.read()
         frame = normalize_uploaded_dataset(pd.read_csv(io.BytesIO(content)))
-        return await run_in_threadpool(lambda: train_from_frame(frame, 'uploaded dataset'))
+        return await run_in_threadpool(
+            lambda: train_from_frame(frame, 'uploaded dataset', file.filename)
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
