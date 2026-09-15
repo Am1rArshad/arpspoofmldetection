@@ -16,5 +16,5 @@ python-multipart
 streamlit
 streamlit-autorefresh
 
-# Dataset download and threat intelligence lookups
+# Dataset download
 requests

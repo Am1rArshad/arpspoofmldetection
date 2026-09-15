@@ -12,13 +12,13 @@ detection, and a React/Vite dashboard.
 - React/Vite dashboard for traffic, alerts, and model status.
 - Persistent models in `models/` and training metadata in
      `data/model_metadata.json`.
-- Optional AbuseIPDB threat intelligence.
+- Monitoring and alerting only; the IDS does not block traffic.
 
 ## Project Structure
 ```text
 backend/       FastAPI API and WebSocket alert stream
 frontend/      React/Vite dashboard
-src/           Packet capture, training, detection, and threat intelligence
+src/           Packet capture, training, and detection
 data/          Datasets, captured packets, alerts, and model metadata
 models/        Saved model and encoders
 run_local.sh   Local service launcher with clean restart
@@ -168,5 +168,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 - [Scapy](https://scapy.net/)
 - [scikit-learn](https://scikit-learn.org/)
 - [Streamlit](https://streamlit.io/)
-- [AbuseIPDB](https://www.abuseipdb.com/)
 - [NSL-KDD Dataset](https://www.unb.ca/cic/datasets/nsl.html) 
