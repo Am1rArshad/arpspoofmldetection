@@ -216,6 +216,29 @@ td {
   height: 16px;
 }
 
+.alert-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.alert-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.alert-actions button {
+  padding: 5px 8px;
+  font-size: 10px;
+}
+
+.risk-score {
+  color: #f59e0b;
+  font: 11px 'DM Mono', monospace;
+}
+
 .alerts-strip {
   border-top: 1px solid #374151;
   margin-top: 24px;

@@ -1,10 +1,14 @@
 import scapy.all as scapy
 import pandas as pd
 import os
+import sys
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(__file__))
+from alert_store import append_alert
+
 DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'captured_packets.csv')
-ALERT_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'alerts.log')
+ALERT_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'alerts.jsonl')
 HOST_MAC = os.environ.get('IDS_HOST_MAC', '00:0c:29:7d:51:17')
 SNIFF_INTERFACE = os.environ.get('IDS_SNIFF_INTERFACE')
 arp_bindings = {}
@@ -42,13 +46,15 @@ def packet_callback(packet):
         if arp.psrc and arp.hwsrc:
             previous_mac = arp_bindings.get(arp.psrc)
             if previous_mac and previous_mac.lower() != arp.hwsrc.lower():
-                alert = (
+                message = (
                     f'ALERT: ARP spoofing suspected: {arp.psrc} changed from '
                     f'{previous_mac} to {arp.hwsrc}'
                 )
-                with open(ALERT_PATH, 'a') as stream:
-                    stream.write(alert + '\n')
-                print(alert, flush=True)
+                alert = append_alert(
+                    ALERT_PATH, message, 90, 'arp_spoofing',
+                    {'src_ip': arp.psrc, 'src_mac': arp.hwsrc, 'previous_mac': previous_mac},
+                )
+                print(alert['message'], flush=True)
             arp_bindings[arp.psrc] = arp.hwsrc
         return
     feat = extract_features(packet)

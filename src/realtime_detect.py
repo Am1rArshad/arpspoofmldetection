@@ -2,15 +2,19 @@ import pandas as pd
 import joblib
 import json
 import os
+import sys
 from time import sleep
 from sklearn.preprocessing import LabelEncoder
+
+sys.path.insert(0, os.path.dirname(__file__))
+from alert_store import append_alert
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'captured_packets.csv')
 MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'rf_model.joblib')
 PROTO_ENCODER_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'proto_encoder.joblib')
 LABEL_ENCODER_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'label_encoder.joblib')
 FEATURES_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'model_features.json')
-LOG_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'alerts.log')
+LOG_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'alerts.jsonl')
 CAPTURE_COLUMNS = [
     'timestamp', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 'protocol',
     'packet_length',
@@ -108,10 +112,20 @@ def main():
         for i, pred in enumerate(preds):
             if is_suspicious(pred):
                 row = new_rows.iloc[i]
-                alert = f"ALERT: Suspicious activity detected: {row.to_dict()} | Predicted label: {pred}"
-                print(alert)
-                with open(LOG_PATH, 'a') as f:
-                    f.write(alert + '\n')
+                features = row[feature_columns].to_dict()
+                score = 100
+                if hasattr(clf, 'predict_proba'):
+                    probabilities = clf.predict_proba(X.iloc[[i]])[0]
+                    predicted_probability = probabilities[list(clf.classes_).index(pred)]
+                    score = round(predicted_probability * 100)
+                alert = append_alert(
+                    LOG_PATH,
+                    f"Suspicious activity detected: {row.to_dict()} | Predicted label: {pred}",
+                    score,
+                    'model',
+                    features,
+                )
+                print(f"ALERT [{alert['score']}/100]: {alert['message']}")
         last_seen = len(df)
         sleep(2)
 

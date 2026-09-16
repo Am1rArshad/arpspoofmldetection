@@ -18,12 +18,15 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / 'data'
 DATA_PATH = DATA_DIR / 'captured_packets.csv'
 LOG_PATH = DATA_DIR / 'alerts.log'
+STRUCTURED_ALERT_PATH = DATA_DIR / 'alerts.jsonl'
+FEEDBACK_PATH = DATA_DIR / 'alert_feedback.jsonl'
 UPLOADED_DATA_PATH = DATA_DIR / 'uploaded_dataset.csv'
 MODEL_METADATA_PATH = DATA_DIR / 'model_metadata.json'
 FRONTEND_DIST = ROOT_DIR / 'frontend' / 'dist'
 
 import sys
 sys.path.insert(0, str(ROOT_DIR / 'src'))
+from alert_store import read_alerts as read_structured_alerts, write_alerts
 from dataset_prep import FEATURES as DATASET_COLUMNS, preprocess as prepare_nsl_kdd
 from train_model import FEATURES as MODEL_FEATURES, train_model
 
@@ -73,10 +76,14 @@ def read_packets():
 
 
 def read_alerts():
-    if not LOG_PATH.exists():
+    return read_structured_alerts(STRUCTURED_ALERT_PATH)[-10:][::-1]
+
+
+def read_feedback():
+    if not FEEDBACK_PATH.exists():
         return []
-    with LOG_PATH.open() as stream:
-        return [line.strip() for line in stream.readlines()[-10:][::-1] if line.strip()]
+    with FEEDBACK_PATH.open() as stream:
+        return [json.loads(line) for line in stream if line.strip()]
 
 
 def read_model_metadata():
@@ -189,16 +196,45 @@ def model_status():
     return read_model_metadata()
 
 
+@app.post('/api/alerts/{alert_id}/feedback')
+def alert_feedback(alert_id: str, feedback: dict):
+    label = feedback.get('label')
+    if label not in {'threat', 'false_positive'}:
+        raise HTTPException(status_code=400, detail='Feedback must be threat or false_positive.')
+    alerts = read_structured_alerts(STRUCTURED_ALERT_PATH)
+    alert = next((item for item in alerts if item.get('id') == alert_id), None)
+    if alert is None:
+        raise HTTPException(status_code=404, detail='Alert not found.')
+    alert['feedback'] = label
+    write_alerts(STRUCTURED_ALERT_PATH, alerts)
+    record = {
+        'alert_id': alert_id,
+        'label': label,
+        'features': alert.get('features', {}),
+        'created_at': datetime.now(timezone.utc).isoformat(),
+    }
+    with FEEDBACK_PATH.open('a') as stream:
+        stream.write(json.dumps(record) + '\n')
+    return alert
+
+
+@app.get('/api/feedback')
+def feedback():
+    items = read_feedback()
+    return {'count': len(items), 'feedback': items[-100:]}
+
+
 @app.delete('/api/alerts')
 def clear_alerts():
-    if LOG_PATH.exists():
-        LOG_PATH.write_text('')
+    for path in (LOG_PATH, STRUCTURED_ALERT_PATH, FEEDBACK_PATH):
+        if path.exists():
+            path.write_text('')
     return {'message': 'Alerts cleared.'}
 
 
 @app.delete('/api/monitoring-data')
 def clear_monitoring_data():
-    for path in (LOG_PATH, DATA_PATH):
+    for path in (LOG_PATH, STRUCTURED_ALERT_PATH, FEEDBACK_PATH, DATA_PATH):
         path.write_text('')
     return {'message': 'Alerts and captured traffic cleared.'}
 
@@ -224,6 +260,32 @@ async def train_upload(file: UploadFile = File(...)):
         frame = normalize_uploaded_dataset(pd.read_csv(io.BytesIO(content)))
         return await run_in_threadpool(
             lambda: train_from_frame(frame, 'uploaded dataset', file.filename)
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post('/api/train/feedback')
+async def train_feedback():
+    items = read_feedback()
+    if len(items) < 2 or len({item.get('label') for item in items}) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail='Review at least one threat and one false alarm before retraining.',
+        )
+    frame = pd.DataFrame([
+        {**item.get('features', {}), 'label': item['label']}
+        for item in items
+        if item.get('features') and item.get('label')
+    ])
+    if frame.empty or frame['label'].nunique() < 2:
+        raise HTTPException(
+            status_code=400,
+            detail='Feedback does not contain enough usable feature data.',
+        )
+    try:
+        return await run_in_threadpool(
+            lambda: train_from_frame(frame, 'admin feedback', 'alert_feedback.jsonl')
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -107,6 +107,33 @@ function App() {
     }
   };
 
+  const reviewAlert = async (alert, label) => {
+    try {
+      const updated = await request(`/api/alerts/${alert.id}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label })
+      });
+      setAlerts(current => current.map(item => item.id === updated.id ? updated : item));
+      setMessage(label === 'threat' ? 'Alert marked as a confirmed threat' : 'Alert marked as a false alarm');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const trainFeedback = async () => {
+    setBusy(true);
+    try {
+      const result = await request('/api/train/feedback', { method: 'POST' });
+      setTrainingResult(result);
+      setMessage('Model retrained from admin feedback');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const clearData = async () => {
     setBusy(true);
     try {
@@ -289,12 +316,25 @@ function App() {
             </div>
 
             <div className="alerts-list">
-              {recentAlerts.length ? recentAlerts.map((alert, index) => (
-                <div className="alert" key={`${alert}-${index}`}>
-                  <AlertTriangle size={16} />
-                  <span>{alert}</span>
-                </div>
-              )) : (
+                {recentAlerts.length ? recentAlerts.map((alert, index) => {
+                  const structured = typeof alert === 'object';
+                  const message = structured ? alert.message : alert;
+                  return (
+                    <div className="alert" key={structured ? alert.id : `${alert}-${index}`}>
+                      <AlertTriangle size={16} />
+                      <div className="alert-content">
+                        <span>{message}</span>
+                        {structured && (
+                          <div className="alert-actions">
+                            <strong className="risk-score">RISK {alert.score}/100</strong>
+                            <button onClick={() => reviewAlert(alert, 'threat')} disabled={busy || alert.feedback === 'threat'}>Threat</button>
+                            <button onClick={() => reviewAlert(alert, 'false_positive')} disabled={busy || alert.feedback === 'false_positive'}>False alarm</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }) : (
                 <div className="empty">No suspicious activity detected.</div>
               )}
             </div>
@@ -311,6 +351,7 @@ function App() {
 
             <div className="training-actions">
               <button onClick={trainNsl} disabled={busy}><Download size={16} />Train with NSL-KDD</button>
+              <button onClick={trainFeedback} disabled={busy}><Database size={16} />Train from feedback</button>
               <label className="button">
                 <Upload size={16} />Upload labeled data
                 <input type="file" accept=".csv" onChange={trainUpload} disabled={busy} />

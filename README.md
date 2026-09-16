@@ -120,6 +120,18 @@ ARP spoofing alerts are generated when the same IP address is observed with
 different MAC addresses. This requires the sniffer to capture ARP packets on
 the monitored network.
 
+## Alert Scores and Admin Feedback
+
+Each new alert has a stable ID, a risk score from 0 to 100, the detector
+features, and a feedback state. In the dashboard, an administrator can mark an
+alert as **Threat** or **False alarm**. Reviewed examples are saved in
+`data/alert_feedback.jsonl`.
+
+After reviewing at least one alert of each type, select **Train from feedback**
+in the Model section. The detector retrains from the reviewed feature examples
+and saves the updated model. Continue reviewing new alerts and retraining as
+more representative examples become available.
+
 ## Clean Restart
 `run_local.sh` performs this cleanup automatically. If services were started
 manually, use:
